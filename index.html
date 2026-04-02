@@ -41,7 +41,7 @@
             <div class="flex flex-col items-center gap-2">
                 <div class="bg-black/40 p-3 rounded-xl backdrop-blur-lg border border-white/10 text-center min-w-[120px] shadow-lg">
                     <p class="text-xs uppercase text-slate-300 font-bold">Thời gian</p>
-                    <p id="timer" class="text-4xl font-bold text-white">20s</p>
+                    <p id="timer" class="text-4xl font-bold text-white">30s</p>
                 </div>
                 <div class="bg-blue-600/60 p-2 rounded-lg backdrop-blur-lg border border-blue-400/50 text-center min-w-[120px] shadow-lg">
                     <p class="text-xs uppercase text-slate-300 font-bold">Người chơi</p>
@@ -183,6 +183,14 @@
                     <textarea id="json-input" class="w-full h-32 p-3 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl font-normal outline-none focus:ring-2 focus:ring-orange-500"></textarea>
                 </div>
 
+                <div>
+                    <h2 class="font-bold text-slate-700 uppercase text-xs">CÀI ĐẶT TRÒ CHƠI</h2>
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <label class="block text-sm text-slate-600 mb-2">Thời gian trả lời mỗi câu (giây):</label>
+                        <input id="timer-input" type="number" min="5" max="120" value="30" class="w-full p-2 border border-slate-300 rounded">
+                    </div>
+                </div>
+
                 <div class="flex gap-2">
                     <button id="save-admin-btn" class="flex-1 bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 uppercase text-sm shadow-md">Lưu Toàn Bộ</button>
                     <button id="close-admin-btn" class="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl hover:bg-slate-300 uppercase text-sm">Quay Lại</button>
@@ -200,6 +208,7 @@
         // --- KHỞI TẠO DỮ LIỆU ---
         let masterQuestions = [{ "q": "Quá trình tiêu hóa bắt đầu từ đâu?", "A": "Dạ dày", "B": "Khoang miệng", "correct": "B" }];
         let classData = JSON.parse(localStorage.getItem('knowledgeArena_Classes')) || { "Lớp Demo": ["Nguyễn Văn A", "Trần Thị B"] };
+        let settings = JSON.parse(localStorage.getItem('knowledgeArena_Settings')) || { timer: 30 };
         let activeClassName = "";
 
         const adminClassSelect = document.getElementById('admin-class-select');
@@ -344,7 +353,9 @@
                     classData[activeClassName] = classListInput.value.split('\n').map(s => s.trim()).filter(s => s !== "");
                 }
                 masterQuestions = JSON.parse(jsonInput.value);
+                settings.timer = parseInt(document.getElementById('timer-input').value) || 30;
                 localStorage.setItem('knowledgeArena_Classes', JSON.stringify(classData));
+                localStorage.setItem('knowledgeArena_Settings', JSON.stringify(settings));
                 alert("Đã lưu dữ liệu thành công!");
                 updateClassDropdowns();
             } catch(e) {
@@ -384,6 +395,7 @@
             document.getElementById('admin-panel').classList.remove('hidden');
             jsonInput.value = JSON.stringify(masterQuestions, null, 2);
             updateClassDropdowns();
+            document.getElementById('timer-input').value = settings.timer;
         };
 
         document.getElementById('close-admin-btn').onclick = () => {
@@ -405,7 +417,7 @@
         const videoElement = document.getElementById('input_video');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
-        let gameActive = false, score = 0, currentQ = 0, timerVal = 20, timerInt;
+        let gameActive = false, score = 0, currentQ = 0, timerVal = settings.timer, timerInt;
         let selectTime = 0, currentSide = null;
         const HOLD_GOAL = 15;
         const QUESTIONS_PER_PLAYER = 5;
@@ -429,7 +441,7 @@
             const currentPlayer = randomPlayers[currentPlayerIndex] || '?';
             document.getElementById('current-player').innerText = currentPlayer.toUpperCase();
             document.getElementById('question-count').innerText = `${currentQ + 1}/${sessionQs.length}`;
-            timerVal = 20;
+            timerVal = settings.timer;
             gameActive = true;
             timerInt = setInterval(() => {
                 if (--timerVal <= 0) checkAnswer(null);
@@ -545,6 +557,7 @@
             
             document.getElementById('bg-music').play();
             document.getElementById('modal').classList.add('hidden');
+            document.getElementById('timer').innerText = `${settings.timer}s`;
             
             randomPlayers = [...playersList].sort(() => Math.random() - 0.5);
             
