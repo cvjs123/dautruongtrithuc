@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đấu Trường Tri Thức</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body { font-family: 'Times New Roman', Times, serif !important; }
+        .mirror { transform: scaleX(-1); }
+        .option-zone { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 2px dashed rgba(255,255,255,0.1); }
+        .option-active { background-color: rgba(251, 191, 36, 0.2); border: 4px solid #fbbf24; box-shadow: 0 0 40px rgba(251, 191, 36, 0.5); transform: scale(1.05); }
+        .progress-fill { transition: width 0.1s linear; }
+        .option-text { text-shadow: 2px 2px 8px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.8); color: white; font-weight: bold; }
+        @keyframes wobble { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px) rotate(-1deg); } 75% { transform: translateX(2px) rotate(1deg); } }
+        .btn-wobble:hover { animation: wobble 0.3s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-slate-950 text-white overflow-hidden">
+
+    <!-- Hiệu ứng âm thanh -->
+    <audio id="bg-music" loop><source src="https://files.catbox.moe/xpimpb.mp3" type="audio/mpeg"></audio>
+    <audio id="snd-correct"><source src="https://files.catbox.moe/pnn9rb.mp3" type="audio/mpeg"></audio>
+    <audio id="snd-wrong"><source src="https://files.catbox.moe/zb7w6o.mp3" type="audio/mpeg"></audio>
+    <audio id="snd-complete"><source src="https://files.catbox.moe/q0o40e.mp3" type="audio/mpeg"></audio>
+    <audio id="snd-roll"><source src="https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3" type="audio/mpeg"></audio>
+
+    <div id="game-screen" class="relative h-screen w-full flex flex-col items-center justify-center p-2">
+        <!-- Chỉ số trên màn hình -->
+        <div class="absolute top-4 left-4 right-4 flex justify-between items-start z-30">
+            <div class="bg-black/40 p-3 rounded-xl backdrop-blur-lg border border-white/10 shadow-lg min-w-[100px]">
+                <p class="text-xs uppercase tracking-widest text-slate-300 font-bold">Điểm đúng</p>
+                <p id="score" class="text-4xl font-bold text-yellow-400 text-center">0</p>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+                <div class="bg-black/40 p-3 rounded-xl backdrop-blur-lg border border-white/10 text-center min-w-[120px] shadow-lg">
+                    <p class="text-xs uppercase text-slate-300 font-bold">Thời gian</p>
+                    <p id="timer" class="text-4xl font-bold text-white">20s</p>
+                </div>
+                <div class="bg-blue-600/60 p-2 rounded-lg backdrop-blur-lg border border-blue-400/50 text-center min-w-[120px] shadow-lg">
+                    <p class="text-xs uppercase text-slate-300 font-bold">Người chơi</p>
+                    <p id="current-player" class="text-sm font-bold text-white uppercase">--</p>
+                </div>
+            </div>
+            <div class="bg-black/40 p-3 rounded-xl backdrop-blur-lg border border-white/10 text-right shadow-lg">
+                <p class="text-xs uppercase text-slate-300 font-bold">Câu hỏi</p>
+                <p id="question-count" class="text-3xl font-bold text-blue-400 text-center">1/10</p>
+            </div>
+        </div>
+
+        <!-- Khung hình Camera -->
+        <div class="relative w-[98vw] h-[65vh] rounded-3xl overflow-hidden border-4 border-slate-800 shadow-2xl bg-black mt-12">
+            <video id="input_video" class="hidden"></video>
+            <canvas id="output_canvas" class="mirror w-full h-full object-cover"></canvas>
+            <div class="absolute inset-0 grid grid-cols-2 grid-rows-2 pointer-events-none p-4 gap-4">
+                <div id="zone-A" class="option-zone flex flex-col items-center justify-center p-4 rounded-2xl">
+                    <div class="bg-blue-600/90 w-16 h-16 rounded-full flex items-center justify-center mb-2 border-2 border-white"><span class="text-3xl font-bold text-white">A</span></div>
+                    <p id="text-a" class="option-text text-xl md:text-3xl font-bold text-center uppercase">...</p>
+                </div>
+                <div id="zone-B" class="option-zone flex flex-col items-center justify-center p-4 rounded-2xl">
+                    <div class="bg-red-600/90 w-16 h-16 rounded-full flex items-center justify-center mb-2 border-2 border-white"><span class="text-3xl font-bold text-white">B</span></div>
+                    <p id="text-b" class="option-text text-xl md:text-3xl font-bold text-center uppercase">...</p>
+                </div>
+                <div id="zone-C" class="option-zone flex flex-col items-center justify-center p-4 rounded-2xl">
+                    <div class="bg-green-600/90 w-16 h-16 rounded-full flex items-center justify-center mb-2 border-2 border-white"><span class="text-3xl font-bold text-white">C</span></div>
+                    <p id="text-c" class="option-text text-xl md:text-3xl font-bold text-center uppercase">...</p>
+                </div>
+                <div id="zone-D" class="option-zone flex flex-col items-center justify-center p-4 rounded-2xl">
+                    <div class="bg-purple-600/90 w-16 h-16 rounded-full flex items-center justify-center mb-2 border-2 border-white"><span class="text-3xl font-bold text-white">D</span></div>
+                    <p id="text-d" class="option-text text-xl md:text-3xl font-bold text-center uppercase">...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Khung hiển thị câu hỏi -->
+        <div class="mt-4 bg-white/95 backdrop-blur-md text-slate-900 p-5 rounded-2xl shadow-2xl max-w-4xl w-[98%] text-center z-20 border-b-4 border-orange-500">
+            <h2 id="question-text" class="text-2xl md:text-4xl font-bold mb-3 text-slate-800 leading-tight">Sẵn sàng chưa?</h2>
+            <div class="w-full bg-slate-300 h-3 rounded-full overflow-hidden">
+                <div id="hold-progress" class="progress-fill h-full bg-orange-500 w-0"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cấu hình -->
+    <div id="modal" class="fixed inset-0 bg-slate-950/95 flex items-center justify-center z-[100] p-4 overflow-y-auto">
+        <div class="bg-white text-slate-900 p-8 rounded-3xl max-w-2xl w-full text-center shadow-2xl border-t-8 border-orange-500 my-auto">
+            <h1 class="text-4xl font-bold mb-4 text-slate-800 uppercase italic">ĐẤU TRƯỜNG TRI THỨC</h1>
+            
+            <div id="main-menu" class="space-y-4">
+                <!-- Vòng quay tên ngẫu nhiên -->
+                <div class="bg-slate-100 p-4 rounded-2xl border-2 border-dashed border-slate-300">
+                    <div class="flex justify-between items-center mb-2 px-2">
+                        <select id="class-selector" class="bg-white border border-slate-300 rounded px-2 py-1 text-xs font-bold outline-none"></select>
+                    </div>
+                    <div id="random-display" class="text-4xl font-bold text-blue-600 mb-3 h-16 flex items-center justify-center px-4 uppercase bg-white rounded-xl shadow-inner border border-slate-200">CHƯA GỌI</div>
+                    <button id="roll-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold text-sm shadow-lg btn-wobble">GỌI TÊN</button>
+                </div>
+
+                <!-- Hướng dẫn chơi -->
+                <div class="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-2xl border-2 border-blue-200">
+                    <h3 class="text-lg font-bold text-slate-700 mb-3 flex items-center">
+                        <span class="mr-2">🎯</span> HƯỚNG DẪN CHƠI
+                    </h3>
+                    <div class="space-y-3 text-sm text-slate-600">
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-3">👤</span>
+                            <span>Gọi tên học sinh may mắn</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-2">✋</span>
+                                <span class="text-xs">Giơ tay trái lên cao chọn đáp án A</span>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-2">🖐️</span>
+                                <span class="text-xs">Giơ tay phải lên cao chọn đáp án B</span>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-2">👇</span>
+                                <span class="text-xs">Hạ tay trái xuống thấp chọn đáp án C</span>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-2">👈</span>
+                                <span class="text-xs">Hạ tay phải xuống thấp chọn đáp án D</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-3">⏱️</span>
+                            <span>Giữ tư thế 1.5 giây để xác nhận lựa chọn</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-3">🔄</span>
+                            <span>Mỗi bạn chơi 5 câu, sau đó chuyển bạn khác</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="start-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl text-2xl uppercase shadow-[0_6px_0_rgb(194,65,12)] active:shadow-none active:translate-y-1">BẮT ĐẦU CHƠI</button>
+                <button id="open-admin-btn" class="text-slate-400 text-xs hover:underline uppercase font-bold block mx-auto">Thiết lập câu hỏi & lớp</button>
+            </div>
+
+            <!-- Bảng quản trị -->
+            <div id="admin-panel" class="hidden text-left space-y-4 font-bold">
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <h2 class="text-slate-700 uppercase text-[10px] mb-2 tracking-widest italic">QUẢN LÝ LỚP HỌC</h2>
+                    
+                    <!-- Hàng nút chức năng quản lý lớp -->
+                    <div class="flex gap-2 mb-4">
+                        <button id="add-class-btn" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs hover:bg-blue-700 shadow-sm transition-colors uppercase font-bold">Thêm Lớp</button>
+                        <button id="add-student-btn" class="flex-1 bg-indigo-500 text-white py-2 rounded-lg text-xs hover:bg-indigo-600 shadow-sm transition-colors uppercase font-bold">Thêm Học Sinh</button>
+                        <button id="export-template-btn" class="flex-1 bg-emerald-500 text-white py-2 rounded-lg text-xs hover:bg-emerald-600 shadow-sm transition-colors uppercase font-bold">Xuất mẫu Excel</button>
+                        <button id="delete-class-btn" class="flex-1 bg-red-500 text-white py-2 rounded-lg text-xs hover:bg-red-600 shadow-sm transition-colors uppercase font-bold">Xóa Lớp</button>
+                        <!-- Input file ẩn để chọn danh sách học sinh -->
+                        <input id="student-file-input" type="file" accept=".csv,.txt,.xlsx,.xls" class="hidden">
+                    </div>
+
+                    <div class="flex flex-col gap-1 mb-3">
+                        <p class="text-[10px] text-slate-500 uppercase">Đang chọn lớp:</p>
+                        <select id="admin-class-select" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-normal outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">-- Chọn lớp --</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-1">
+                        <p class="text-[10px] text-slate-500 uppercase">Danh sách (Mỗi tên một dòng):</p>
+                        <textarea id="class-list-input" class="w-full h-32 p-3 text-sm bg-white border border-slate-200 rounded-xl font-normal outline-none focus:ring-2 focus:ring-blue-500" placeholder="Tự động cập nhật khi thêm học sinh từ file..."></textarea>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <h2 class="font-bold text-slate-700 uppercase text-xs">CÂU HỎI (JSON)</h2>
+                        <label class="cursor-pointer bg-orange-600 text-white px-2 py-1 rounded text-[10px] hover:bg-orange-700 uppercase">
+                            Tải file .json <input id="file-input" type="file" accept=".json" class="hidden">
+                        </label>
+                    </div>
+                    <textarea id="json-input" class="w-full h-32 p-3 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl font-normal outline-none focus:ring-2 focus:ring-orange-500"></textarea>
+                </div>
+
+                <div class="flex gap-2">
+                    <button id="save-admin-btn" class="flex-1 bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 uppercase text-sm shadow-md">Lưu Toàn Bộ</button>
+                    <button id="close-admin-btn" class="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl hover:bg-slate-300 uppercase text-sm">Quay Lại</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback thông báo -->
+    <div id="feedback" class="fixed inset-0 flex items-center justify-center z-50 hidden pointer-events-none">
+        <h1 id="feedback-text" class="text-8xl md:text-9xl font-bold uppercase italic"></h1>
+    </div>
+
+    <script>
+        // --- KHỞI TẠO DỮ LIỆU ---
+        let masterQuestions = [{ "q": "Quá trình tiêu hóa bắt đầu từ đâu?", "A": "Dạ dày", "B": "Khoang miệng", "correct": "B" }];
+        let classData = JSON.parse(localStorage.getItem('knowledgeArena_Classes')) || { "Lớp Demo": ["Nguyễn Văn A", "Trần Thị B"] };
+        let activeClassName = "";
+
+        const adminClassSelect = document.getElementById('admin-class-select');
+        const classListInput = document.getElementById('class-list-input');
+        const jsonInput = document.getElementById('json-input');
+        const classSelector = document.getElementById('class-selector');
+        const randomDisplay = document.getElementById('random-display');
+        const rollBtn = document.getElementById('roll-btn');
+
+        // Hàm cập nhật tất cả các danh sách chọn lớp
+        function updateClassDropdowns() {
+            const classNames = Object.keys(classData);
+            const optionsHtml = classNames.map(name => `<option value="${name}" ${name === activeClassName ? 'selected' : ''}>${name}</option>`).join('');
+            const placeholder = '<option value="">-- Chọn lớp --</option>';
+            
+            classSelector.innerHTML = placeholder + optionsHtml;
+            adminClassSelect.innerHTML = placeholder + optionsHtml;
+        }
+
+        // --- XỬ LÝ CÁC NÚT QUẢN TRỊ ---
+
+        // 1. Thêm Lớp (Mở bảng nhập tên và lưu lại)
+        document.getElementById('add-class-btn').onclick = () => {
+            const name = prompt("Nhập tên lớp mới:");
+            if (name && name.trim()) {
+                const trimmedName = name.trim();
+                if (!classData[trimmedName]) {
+                    classData[trimmedName] = []; // Tạo lớp trống
+                    activeClassName = trimmedName;
+                    updateClassDropdowns();
+                    classListInput.value = "";
+                    alert(`Đã tạo lớp ${trimmedName}. Bây giờ hãy nhấn "Thêm Học Sinh" để nạp danh sách.`);
+                } else {
+                    alert("Tên lớp này đã tồn tại!");
+                }
+            }
+        };
+
+        // 2. Thêm Học Sinh (Chọn file và cập nhật vào lớp đang chọn)
+        const studentFileInput = document.getElementById('student-file-input');
+        document.getElementById('add-student-btn').onclick = () => {
+            if (!adminClassSelect.value) return alert("Vui lòng chọn hoặc thêm lớp trước khi nạp danh sách học sinh!");
+            studentFileInput.click(); // Mở cửa sổ chọn file
+        };
+
+        document.getElementById('export-template-btn').onclick = () => {
+            const data = [
+                ["Tên học sinh"],
+                ["Nguyễn Văn A"],
+                ["Trần Thị B"]
+            ];
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, "Danh sách học sinh");
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'mau_danh_sach_hoc_sinh.xlsx';
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            alert('Đã tải mẫu Excel thành công.');
+        };
+
+        studentFileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                let names = [];
+
+                const loadCsv = (text) => {
+                    const normalized = text.replace(/\uFEFF/g, '');
+                    return normalized.split(/\r?\n/)
+                        .map(line => line.split(',')[0].replace(/"/g, '').trim())
+                        .filter(name => name && name !== 'Tên học sinh' && name !== '﻿Tên học sinh');
+                };
+
+                if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    try {
+                        const data = new Uint8Array(ev.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const sheet = workbook.Sheets[sheetName];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                        names = rows.map(row => String(row[0] || '').trim()).filter(n => n && !['Tên học sinh', '﻿Tên học sinh'].includes(n));
+                    } catch (err) {
+                        alert('Không thể đọc file Excel. Vui lòng kiểm tra định dạng (.xlsx/.xls).');
+                        return;
+                    }
+                } else if (file.name.endsWith('.csv')) {
+                    names = loadCsv(ev.target.result);
+                } else {
+                    names = ev.target.result.split(/\r?\n/).map(s => s.trim()).filter(s => s);
+                }
+
+                if (names.length > 0) {
+                    // Cập nhật vào ô văn bản và dữ liệu hiện tại
+                    classListInput.value = names.join('\n');
+                    classData[adminClassSelect.value] = names;
+                    alert(`Đã nạp thành công ${names.length} học sinh vào lớp ${adminClassSelect.value}. Hãy nhấn "Lưu Toàn Bộ" để hoàn tất.`);
+                } else {
+                    alert("Không tìm thấy tên học sinh nào trong file!");
+                }
+                studentFileInput.value = ""; // Reset input
+            };
+            if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsText(file, 'UTF-8');
+            }
+        };
+
+        // 3. Xóa Lớp
+        document.getElementById('delete-class-btn').onclick = () => {
+            const selected = adminClassSelect.value;
+            if (!selected) return alert("Chọn lớp cần xóa!");
+            
+            if (confirm(`Bạn có chắc chắn muốn xóa toàn bộ dữ liệu lớp ${selected}?`)) {
+                delete classData[selected];
+                activeClassName = "";
+                updateClassDropdowns();
+                classListInput.value = "";
+                localStorage.setItem('knowledgeArena_Classes', JSON.stringify(classData));
+            }
+        };
+
+        // Khi thay đổi lớp trong danh sách Admin
+        adminClassSelect.onchange = (e) => {
+            activeClassName = e.target.value;
+            classListInput.value = activeClassName ? classData[activeClassName].join('\n') : "";
+        };
+
+        // Lưu toàn bộ thay đổi
+        document.getElementById('save-admin-btn').onclick = () => {
+            try {
+                if (activeClassName) {
+                    classData[activeClassName] = classListInput.value.split('\n').map(s => s.trim()).filter(s => s !== "");
+                }
+                masterQuestions = JSON.parse(jsonInput.value);
+                localStorage.setItem('knowledgeArena_Classes', JSON.stringify(classData));
+                alert("Đã lưu dữ liệu thành công!");
+                updateClassDropdowns();
+            } catch(e) {
+                alert("Lỗi định dạng JSON câu hỏi!");
+            }
+        };
+
+        // --- LOGIC QUAY SỐ GỌI TÊN ---
+        let isRolling = false;
+        let selectedStudent = '';
+        
+        rollBtn.onclick = () => {
+            const selectedClass = classSelector.value;
+            if (!selectedClass) return alert("Vui lòng chọn lớp!");
+            if (isRolling) return;
+            
+            const list = classData[selectedClass];
+            if (!list || list.length === 0) return alert("Lớp này trống!");
+
+            isRolling = true;
+            document.getElementById('snd-roll').play();
+            let count = 0;
+            const timer = setInterval(() => {
+                selectedStudent = list[Math.floor(Math.random() * list.length)];
+                randomDisplay.innerText = selectedStudent.toUpperCase();
+                if (++count > 25) {
+                    clearInterval(timer);
+                    isRolling = false;
+                    randomDisplay.classList.add('text-orange-500');
+                    setTimeout(() => randomDisplay.classList.remove('text-orange-500'), 1000);
+                }
+            }, 70);
+        };
+
+        document.getElementById('open-admin-btn').onclick = () => {
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            jsonInput.value = JSON.stringify(masterQuestions, null, 2);
+            updateClassDropdowns();
+        };
+
+        document.getElementById('close-admin-btn').onclick = () => {
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('main-menu').classList.remove('hidden');
+            updateClassDropdowns();
+        };
+
+        // Tải file câu hỏi JSON
+        document.getElementById('file-input').onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => { jsonInput.value = ev.target.result; };
+            reader.readAsText(file);
+        };
+
+        // --- POSE ENGINE ---
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        let gameActive = false, score = 0, currentQ = 0, timerVal = 20, timerInt;
+        let selectTime = 0, currentSide = null;
+        const HOLD_GOAL = 15;
+        const QUESTIONS_PER_PLAYER = 5;
+        let sessionQs = [];
+        let playersList = [];
+        let randomPlayers = [];
+        let currentPlayerIndex = 0;
+        let currentClassName = '';
+        let playerScores = {};
+        let playerCorrect = 0;
+
+        function startRound() {
+            const q = sessionQs[currentQ];
+            document.getElementById('question-text').innerText = q.q || q.question;
+            const getV = (k) => q[k.toUpperCase()] || q[k.toLowerCase()] || "";
+            ['a','b','c','d'].forEach(k => {
+                const val = getV(k);
+                document.getElementById(`text-${k}`).innerText = val;
+                document.getElementById(`zone-${k.toUpperCase()}`).style.opacity = val ? "1" : "0";
+            });
+            const currentPlayer = randomPlayers[currentPlayerIndex] || '?';
+            document.getElementById('current-player').innerText = currentPlayer.toUpperCase();
+            document.getElementById('question-count').innerText = `${currentQ + 1}/${sessionQs.length}`;
+            timerVal = 20;
+            gameActive = true;
+            timerInt = setInterval(() => {
+                if (--timerVal <= 0) checkAnswer(null);
+                document.getElementById('timer').innerText = `${timerVal}s`;
+            }, 1000);
+        }
+
+        function checkAnswer(choice) {
+            gameActive = false; clearInterval(timerInt);
+            const q = sessionQs[currentQ];
+            const correct = (q.correct || "").toUpperCase();
+            const isOk = choice === correct;
+            const fb = document.getElementById('feedback');
+            const fbt = document.getElementById('feedback-text');
+            
+            fb.classList.remove('hidden');
+            fbt.innerText = isOk ? "CHÍNH XÁC!" : (choice ? "SAI RỒI!" : "HẾT GIỜ!");
+            fbt.className = `text-6xl md:text-9xl font-bold uppercase italic ${isOk ? 'text-green-400' : 'text-red-500'}`;
+            
+            if(isOk) { 
+                score++; 
+                playerCorrect++;
+                document.getElementById('score').innerText = score; 
+                document.getElementById('snd-correct').play(); 
+            }
+            else document.getElementById('snd-wrong').play();
+
+            setTimeout(() => {
+                fb.classList.add('hidden');
+                if (++currentQ >= sessionQs.length) {
+                    const currentPlayer = randomPlayers[currentPlayerIndex];
+                    playerScores[currentPlayer] = playerCorrect;
+                    
+                    document.getElementById('snd-complete').play();
+                    document.getElementById('modal').classList.remove('hidden');
+                    const totalQuestions = sessionQs.length;
+                    
+                    // Hàm tính điểm theo quy tắc: 1 câu=0, 2 câu=6, 3 câu=7, 4 câu=8, 5 câu=9
+                    const calculatePoints = (correctCount) => {
+                        const pointsMap = {0: 0, 1: 0, 2: 6, 3: 7, 4: 8, 5: 9};
+                        return pointsMap[correctCount] || 0;
+                    };
+                    
+                    // Tạo danh sách chi tiết từng bạn với format: Tên: X/5 = Y điểm
+                    const detailList = Object.entries(playerScores)
+                        .map(([name, correctCount]) => {
+                            const points = calculatePoints(correctCount);
+                            return `<div class="py-2 border-b border-slate-300"><span class="font-bold text-lg">${name}:</span> <span class="text-blue-600 font-bold">${correctCount}/5 = ${points} điểm</span></div>`;
+                        })
+                        .join('');
+                    
+                    // Tính tổng điểm
+                    const totalPoints = Object.values(playerScores).reduce((sum, count) => sum + calculatePoints(count), 0);
+                    
+                    document.getElementById('main-menu').innerHTML = `<div class="p-8 text-center">
+                        <p class="text-6xl font-bold text-orange-500 my-4">🏆 KẾT QUẢ 🏆</p>
+                        <p class="text-4xl font-bold text-green-600 mb-6">Tổng: ${totalPoints} điểm</p>
+                        <p class="text-2xl text-slate-700 mb-4 font-bold">Chi tiết từng bạn:</p>
+                        <div class="text-lg text-slate-600 mb-6 max-h-48 overflow-y-auto bg-slate-50 p-4 rounded-lg">${detailList}</div>
+                        <p class="text-xl text-slate-600 mb-4">Tổng: ${randomPlayers.length} bạn tham gia, ${sessionQs.length} câu hỏi</p>
+                        <button onclick="location.reload()" class="mt-4 bg-blue-600 text-white px-10 py-3 rounded-2xl font-bold hover:bg-blue-700">CHƠI LẠI</button>
+                    </div>`;
+                } else {
+                    const questionsForPlayer = currentQ % QUESTIONS_PER_PLAYER;
+                    
+                    // Kiểm tra nếu câu 4 (sau câu 3): thông báo bạn tiếp theo chuẩn bị
+                    if (questionsForPlayer === 3 && currentPlayerIndex + 1 < randomPlayers.length) {
+                        const nextPlayerName = randomPlayers[currentPlayerIndex + 1].toUpperCase();
+                        fbt.innerText = `🎯 ${nextPlayerName} CHUẨN BỊ! 🎯`;
+                        fbt.className = 'text-2xl md:text-4xl font-bold uppercase italic text-yellow-300 drop-shadow-lg whitespace-pre-wrap';
+                        fb.classList.remove('hidden');
+                        fb.style.textShadow = '0 0 30px rgba(253, 224, 71, 0.8)';
+                        setTimeout(() => {
+                            fb.classList.add('hidden');
+                            fb.style.textShadow = '';
+                            startRound();
+                        }, 2000);
+                    } else if (questionsForPlayer === 0 && currentPlayerIndex < randomPlayers.length - 1) {
+                        const currentPlayer = randomPlayers[currentPlayerIndex];
+                        playerScores[currentPlayer] = playerCorrect;
+                        
+                        currentPlayerIndex++;
+                        const nextPlayerName = randomPlayers[currentPlayerIndex].toUpperCase();
+                        fbt.innerText = `🎯 ${nextPlayerName} TRẢ LỜI! 🎯`;
+                        fbt.className = 'text-2xl md:text-4xl font-bold uppercase italic text-yellow-300 drop-shadow-lg whitespace-pre-wrap';
+                        fb.classList.remove('hidden');
+                        fb.style.textShadow = '0 0 30px rgba(253, 224, 71, 0.8)';
+                        playerCorrect = 0;
+                        setTimeout(() => {
+                            fb.classList.add('hidden');
+                            fb.style.textShadow = '';
+                            startRound();
+                        }, 3000);
+                    } else {
+                        startRound();
+                    }
+                }
+            }, 1500);
+        }
+
+        document.getElementById('start-btn').onclick = () => {
+            const selected = classSelector.value || (Object.keys(classData).length > 0 ? Object.keys(classData)[0] : 'Lớp Demo');
+            if (!selected) return alert("Vui lòng chọn lớp trước khi bắt đầu!");
+            
+            activeClassName = selected;
+            updateClassDropdowns();
+            
+            playersList = classData[selected] || [];
+            if (playersList.length === 0) {
+                playersList = ['Nguyễn Văn A', 'Trần Thị B', 'Lê Văn C'];
+                classData[selected] = playersList;
+            }
+            
+            document.getElementById('bg-music').play();
+            document.getElementById('modal').classList.add('hidden');
+            
+            randomPlayers = [...playersList].sort(() => Math.random() - 0.5);
+            
+            // Nếu có học sinh được gọi từ nút "GỌI TÊN", đặt lên đầu danh sách
+            if (selectedStudent && randomPlayers.includes(selectedStudent)) {
+                randomPlayers = randomPlayers.filter(p => p !== selectedStudent);
+                randomPlayers.unshift(selectedStudent);
+            }
+            
+            const totalQuestions = randomPlayers.length * QUESTIONS_PER_PLAYER;
+            sessionQs = [...masterQuestions].sort(() => Math.random() - 0.5).slice(0, totalQuestions);
+            
+            score = 0; currentQ = 0; currentPlayerIndex = 0; currentClassName = selected;
+            playerScores = {};
+            playerCorrect = 0;
+            startRound();
+        };
+
+        const pose = new Pose({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+        pose.setOptions({ modelComplexity: 1, minDetectionConfidence: 0.5 });
+        pose.onResults(res => {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(res.image, 0, 0, canvasElement.width, canvasElement.height);
+            if (res.poseLandmarks && gameActive) {
+                const l = res.poseLandmarks, n = l[0], rw = l[15], lw = l[16];
+                let side = null;
+                if (rw.visibility > 0.5 && rw.x > 0.55) side = rw.y < n.y ? 'A' : 'C';
+                else if (lw.visibility > 0.5 && lw.x < 0.45) side = lw.y < n.y ? 'B' : 'D';
+                
+                ['A','B','C','D'].forEach(id => document.getElementById(`zone-${id}`).classList.toggle('option-active', side === id));
+                if (side && side === currentSide) selectTime++; else { selectTime = 0; currentSide = side; }
+                document.getElementById('hold-progress').style.width = `${(selectTime / HOLD_GOAL) * 100}%`;
+                if (selectTime >= HOLD_GOAL) { checkAnswer(side); selectTime = 0; }
+            }
+        });
+
+        new Camera(videoElement, { onFrame: async () => await pose.send({ image: videoElement }), width: 1280, height: 720 }).start();
+        window.onload = () => { updateClassDropdowns(); canvasElement.width = 1280; canvasElement.height = 720; };
+    </script>
+</body>
+</html>
